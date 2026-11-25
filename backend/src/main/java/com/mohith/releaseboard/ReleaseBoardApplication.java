@@ -1,11 +1,11 @@
-package com.mohith.taskapp;
+package com.mohith.releaseboard;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class TaskApplication {
+public class ReleaseBoardApplication {
     public static void main(String[] args) {
-        SpringApplication.run(TaskApplication.class, args);
+        SpringApplication.run(ReleaseBoardApplication.class, args);
     }
 }
