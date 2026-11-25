@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ReleaseBoard</title>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+    main { max-width: 850px; margin: auto; padding: 32px 16px; }
+    h1 { margin-bottom: 4px; }
+    .muted { color: #94a3b8; }
+    .card { background: #1e293b; border-radius: 12px; padding: 20px; margin: 20px 0; overflow-x: auto; }
+    .version { font-size: 48px; font-weight: bold; margin: 8px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px; border-bottom: 1px solid #334155; }
+    .SUCCESS { color: #4ade80; }
+    .FAILED { color: #f87171; }
+    .ROLLED_BACK { color: #fbbf24; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ReleaseBoard</h1>
+    <div class="muted" id="message">Loading...</div>
+    <section class="card">
+      <div class="muted">Latest deployment</div>
+      <div class="version" id="version">-</div>
+      <div id="details"></div>
+    </section>
+    <section class="card">
+      <table>
+        <thead><tr><th>Version</th><th>Commit</th><th>Status</th><th>Deployed at</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+  </main>
+  <script>
+    function cell(row, text, style) {
+      const td = row.insertCell();
+      td.textContent = text;
+      if (style) td.className = style;
+    }
+
+    async function load() {
+      const message = document.getElementById('message');
+      try {
+        const response = await fetch('/api/releases');
+        if (!response.ok) throw new Error(response.status);
+        const releases = await response.json();
+        const rows = document.getElementById('rows');
+        rows.replaceChildren();
+        for (const r of releases) {
+          const row = rows.insertRow();
+          cell(row, r.version);
+          cell(row, r.commitId);
+          cell(row, r.status, r.status);
+          cell(row, new Date(r.deployedAt).toLocaleString());
+        }
+        if (releases.length) {
+          const latest = releases[0];
+          document.getElementById('version').textContent = latest.version;
+          const details = document.getElementById('details');
+          details.textContent = latest.status + ' | commit ' + latest.commitId;
+          details.className = latest.status;
+        }
+        message.textContent = 'Live, refreshes every 10 seconds';
+      } catch (error) {
+        message.textContent = 'Cannot reach the backend';
+      }
+    }
+
+    load();
+    setInterval(load, 10000);
+  </script>
+</body>
+</html>
