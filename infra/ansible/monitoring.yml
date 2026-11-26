@@ -1,0 +1,69 @@
+---
+- name: Install Prometheus and Grafana
+  hosts: server
+  become: true
+  gather_facts: false
+
+  vars_prompt:
+    - name: grafana_password
+      prompt: Choose a Grafana password
+      private: true
+      confirm: true
+
+  tasks:
+    - name: Create the monitoring namespace
+      ansible.builtin.shell: >
+        k3s kubectl create namespace monitoring --dry-run=client -o yaml
+        | k3s kubectl apply -f -
+
+    - name: Save the Grafana password as a Secret
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - -n
+          - monitoring
+          - create
+          - secret
+          - generic
+          - grafana-admin
+          - --from-literal=admin-user=admin
+          - "--from-literal=admin-password={{ grafana_password }}"
+      register: secret
+      changed_when: secret.rc == 0
+      failed_when: secret.rc != 0 and 'already exists' not in secret.stderr
+      no_log: true
+
+    - name: Copy the monitoring file
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../monitoring/stack.yml"
+        dest: /opt/releaseboard/monitoring.yml
+        mode: "0600"
+
+    - name: Install the monitoring stack
+      ansible.builtin.command: k3s kubectl apply -f /opt/releaseboard/monitoring.yml
+
+    - name: Wait for Grafana
+      ansible.builtin.command: k3s kubectl -n monitoring rollout status deployment/monitoring-grafana --timeout=20s
+      register: grafana
+      until: grafana.rc == 0
+      retries: 20
+      delay: 15
+      changed_when: false
+
+    - name: Wait for Prometheus
+      ansible.builtin.command: k3s kubectl -n monitoring wait --for=condition=Ready pod -l app.kubernetes.io/name=prometheus --timeout=20s
+      register: prom
+      until: prom.rc == 0
+      retries: 20
+      delay: 15
+      changed_when: false
+
+    - name: Get the monitoring pods
+      ansible.builtin.command: k3s kubectl -n monitoring get pods
+      register: pods
+      changed_when: false
+
+    - name: Show the monitoring pods
+      ansible.builtin.debug:
+        var: pods.stdout_lines

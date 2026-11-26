@@ -39,7 +39,7 @@ resource "aws_security_group" "server" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "from_my_ip" {
-  for_each          = { ssh = 22, app = 8081 }
+  for_each          = { ssh = 22, app = 8081, grafana = 3000 }
   security_group_id = aws_security_group.server.id
   cidr_ipv4         = "${chomp(data.http.my_ip.response_body)}/32"
   from_port         = each.value

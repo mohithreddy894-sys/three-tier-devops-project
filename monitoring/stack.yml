@@ -1,0 +1,36 @@
+# Prometheus and Grafana, installed by the Helm controller built into k3s
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: monitoring
+  namespace: kube-system
+spec:
+  repo: https://prometheus-community.github.io/helm-charts
+  chart: kube-prometheus-stack
+  targetNamespace: monitoring
+  valuesContent: |-
+    alertmanager:
+      enabled: false
+    kubeControllerManager:
+      enabled: false
+    kubeScheduler:
+      enabled: false
+    kubeProxy:
+      enabled: false
+    kubeEtcd:
+      enabled: false
+    grafana:
+      admin:
+        existingSecret: grafana-admin
+      service:
+        type: LoadBalancer
+        port: 3000
+      resources:
+        requests: { memory: 128Mi }
+        limits: { memory: 512Mi }
+    prometheus:
+      prometheusSpec:
+        retention: 6h
+        resources:
+          requests: { memory: 300Mi }
+          limits: { memory: 800Mi }
