@@ -1,0 +1,63 @@
+---
+- name: Deploy ReleaseBoard to Kubernetes
+  hosts: server
+  become: true
+  gather_facts: false
+
+  vars:
+    app_dir: /opt/releaseboard
+    kubectl: k3s kubectl -n releaseboard
+
+  tasks:
+    - name: Create the app folder
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Copy the app files
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../{{ item }}"
+        dest: "{{ app_dir }}/"
+        mode: "0600"
+      loop:
+        - k8s/app.yml
+        - database/init.sql
+        - .env
+
+    - name: Create the namespace
+      ansible.builtin.shell: >
+        k3s kubectl create namespace releaseboard --dry-run=client -o yaml
+        | k3s kubectl apply -f -
+
+    - name: Create the secret
+      ansible.builtin.shell: >
+        {{ kubectl }} create secret generic app-secrets
+        --from-env-file={{ app_dir }}/.env --dry-run=client -o yaml
+        | {{ kubectl }} apply -f -
+
+    - name: Create the database setup config
+      ansible.builtin.shell: >
+        {{ kubectl }} create configmap db-init
+        --from-file={{ app_dir }}/init.sql --dry-run=client -o yaml
+        | {{ kubectl }} apply -f -
+
+    - name: Deploy the app
+      ansible.builtin.command: "{{ kubectl }} apply -f {{ app_dir }}/app.yml"
+
+    - name: Wait until everything is running
+      ansible.builtin.command: "{{ kubectl }} rollout status {{ item }} --timeout=300s"
+      loop:
+        - statefulset/database
+        - deployment/backend
+        - deployment/frontend
+      changed_when: false
+
+    - name: Get pods and services
+      ansible.builtin.command: "{{ kubectl }} get pods,services"
+      register: result
+      changed_when: false
+
+    - name: Show pods and services
+      ansible.builtin.debug:
+        var: result.stdout_lines

@@ -1,0 +1,162 @@
+# MySQL database
+apiVersion: v1
+kind: Service
+metadata:
+  name: database
+spec:
+  clusterIP: None
+  selector:
+    app: database
+  ports:
+    - port: 3306
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: database
+spec:
+  serviceName: database
+  replicas: 1
+  selector:
+    matchLabels:
+      app: database
+  template:
+    metadata:
+      labels:
+        app: database
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.4
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_DATABASE
+              value: releasedb
+            - name: MYSQL_USER
+              value: releaseuser
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: app-secrets, key: DB_PASSWORD }
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: app-secrets, key: DB_ROOT_PASSWORD }
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mysqladmin ping -h 127.0.0.1 -u root -p\"$MYSQL_ROOT_PASSWORD\""]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests: { memory: 512Mi, cpu: 100m }
+            limits: { memory: 1Gi }
+          volumeMounts:
+            - name: db-data
+              mountPath: /var/lib/mysql
+            - name: db-init
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: db-init
+          configMap:
+            name: db-init
+  volumeClaimTemplates:
+    - metadata:
+        name: db-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+---
+# Java backend
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      initContainers:
+        - name: wait-for-database
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z database 3306; do sleep 3; done"]
+      containers:
+        - name: backend
+          image: mohithvreddy/releaseboard-backend:build-1
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DB_HOST
+              value: database
+            - name: DB_NAME
+              value: releasedb
+            - name: DB_USER
+              value: releaseuser
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: app-secrets, key: DB_PASSWORD }
+            - name: RELEASE_TOKEN
+              valueFrom:
+                secretKeyRef: { name: app-secrets, key: RELEASE_TOKEN }
+          readinessProbe:
+            tcpSocket: { port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests: { memory: 256Mi, cpu: 100m }
+            limits: { memory: 512Mi }
+---
+# Nginx frontend
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  type: LoadBalancer
+  selector:
+    app: frontend
+  ports:
+    - port: 8081
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: mohithvreddy/releaseboard-frontend:build-1
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+          resources:
+            requests: { memory: 32Mi, cpu: 20m }
+            limits: { memory: 128Mi }
